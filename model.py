@@ -9,7 +9,7 @@ class MaskedLanguageModel(nn.Module):
         super(MaskedLanguageModel, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_size)
         self.pos_encoder = PositionalEncoding(embedding_size)
-        encoder_layers = TransformerEncoderLayer(embedding_size, nhead, nhid)
+        encoder_layers = TransformerEncoderLayer(embedding_size, nhead, nhid, batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.linear = nn.Linear(embedding_size, vocab_size)
 

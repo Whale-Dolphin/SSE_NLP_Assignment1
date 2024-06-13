@@ -17,6 +17,13 @@ from dataset import TextDataset
 from model import MaskedLanguageModel
 from utils import get_vocab_list, split_text
 
+def no_grad(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with torch.no_grad():
+            return func(*args, **kwargs)
+    return wrapper
+
 def setup(rank, world_size):
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
@@ -43,6 +50,12 @@ def save_checkpoint(model, optimizer, epoch, checkpoint_path):
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
     }, checkpoint_path)
+
+def generate_square_subsequent_mask(sz):
+    """Generate a square mask for the sequence. The masked positions are filled with float('-inf'). Unmasked positions are filled with float(0.0)."""
+    mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+    mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+    return mask
 
 def train(rank, cfg, world_size):
     if world_size > 1:
@@ -79,13 +92,16 @@ def train(rank, cfg, world_size):
         model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
 
     # Define loss function and optimizer
-    criterion = nn.CrossEntropyLoss()
+    pad_idx = vocab_list.index("<PAD>")
+    criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
 
     # Load checkpoint if available
     start_epoch = 0
     if cfg.checkpoint_path:
         start_epoch = load_checkpoint(model, optimizer, cfg.checkpoint_path)
+
+    scaler = torch.cuda.amp.GradScaler()  # Mixed precision
 
     for epoch in range(start_epoch, cfg.epochs):
         model.train()
@@ -95,19 +111,23 @@ def train(rank, cfg, world_size):
             inputs, attention_mask, labels = inputs.to(device), attention_mask.to(device), labels.to(device)
 
             # Generate source mask for Transformer
-            src_mask = model.transformer_encoder.generate_square_subsequent_mask(inputs.size(1)).to(device)
+            src_mask = generate_square_subsequent_mask(inputs.size(1)).to(device)
 
-            # Forward pass
-            outputs = model(inputs, src_mask)
-            loss = criterion(outputs.view(-1, vocab_size), labels.view(-1))
+            with torch.cuda.amp.autocast():  # Mixed precision
+                # Forward pass
+                outputs = model(inputs, src_mask)
+                loss = criterion(outputs.view(-1, vocab_size), labels.view(-1))
 
             # Backward pass and optimization
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             if (i + 1) % 100 == 0 and rank == 0:
                 print(f'Epoch [{epoch+1}/{cfg.epochs}], Step [{i+1}/{len(train_dataloader)}], Loss: {loss.item()}')
+
+            torch.cuda.empty_cache()  # Clear cache after each batch
 
         # Validation step
         if rank == 0:
@@ -116,18 +136,12 @@ def train(rank, cfg, world_size):
 
         # Save checkpoint
         if rank == 0 and cfg.checkpoint_path:
-            checkpoint_path = os.path.join(cfg.checkpoint_path, f"epoch_{epoch}.pth")
-            save_checkpoint(model, optimizer, epoch, checkpoint_path)
+            save_checkpoint(model, optimizer, epoch, cfg.checkpoint_path)
+
+        torch.cuda.empty_cache()  # Clear cache after each epoch
 
     if world_size > 1:
         cleanup()
-
-def no_grad(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        with torch.no_grad():
-            return func(*args, **kwargs)
-    return wrapper
 
 @no_grad
 def validate(model, val_dataloader, criterion, device):
@@ -137,7 +151,7 @@ def validate(model, val_dataloader, criterion, device):
         inputs, attention_mask, labels = inputs.to(device), attention_mask.to(device), labels.to(device)
 
         # Generate source mask for Transformer
-        src_mask = model.transformer_encoder.generate_square_subsequent_mask(inputs.size(1)).to(device)
+        src_mask = generate_square_subsequent_mask(inputs.size(1)).to(device)
 
         # Forward pass
         outputs = model(inputs, src_mask)
@@ -151,7 +165,7 @@ def validate(model, val_dataloader, criterion, device):
 def main(cfg: DictConfig) -> Optional[float]:
     print('Initializing Training Process..')
 
-    n_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    n_gpus = torch.cuda.device_count() if torch.cuda.is_available() and cfg.use_cuda else 0
 
     if n_gpus > 1:
         print(f"Using {n_gpus} GPUs for training.")
