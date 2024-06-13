@@ -29,26 +29,26 @@ def train(rank, cfg, num_gpus):
     val_file = cfg.val_file
 
     with open(train_file, 'rb') as f:
-            train_dataset = pickle.load(f)
+            train_data = pickle.load(f)
 
     with open(val_file, 'rb') as f:
-            test_dataset = pickle.load(f)
+            test_data = pickle.load(f)
 
     vocab_list = get_vocab_list(train_dataset)
     vocab_list = get_vocab_list(val_file, vocab_list)
+
+    vocab_size = len(vocab_size)
+
+    train_dataset = TextDataset(train_data,
+                                vocab_list)
+    test_dataset = TextDataset(test_data, 
+                               vocab_list)
 
     model = TransformerModel(vocab_size, embedding_size, nhead, nhid, nlayers).to(device)
 
     # Define your loss function and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
-
-
-
-    train_dataset = TextDataset(train_text,
-                                vocab_list)
-    test_dataset = TextDataset(test_text, 
-                               vocab_list)
 
     # Load your data (this is just a placeholder, replace with your actual data loading)
     train_dataloader = DataLoader(...)
