@@ -1,10 +1,6 @@
 from torch.utils.data import Dataset
 
-
-def split_text(text):
-    words = text.split(' ')
-    words = [word for word in words if word != '']
-    return words
+from utils import split_text
 
 
 class TextDataset(Dataset):

@@ -8,11 +8,22 @@ def clean_text(text):
     return text
 
 
-def get_vocab_list(text):
-    vocab_set = set()
+def split_text(text):
+    words = text.split(' ')
+    words = [word for word in words if word != '']
+    return words
+
+
+def get_vocab_list(text, existing_vocab=None):
+    if existing_vocab:
+        vocab_set = set(existing_vocab)
+    else:
+        vocab_set = set()
 
     for line in text:
-        for word in line:
+        line = clean_text(line)
+        words = split_text(line)
+        for word in words:
             vocab_set.add(word)
 
     vocab_list = list(vocab_set)

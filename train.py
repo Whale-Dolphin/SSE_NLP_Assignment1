@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import pickle
 from typing import Optional
 
 import hydra
@@ -10,7 +11,9 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
+from dataset import TextDataset
 from model import TransformerModel
+from utils import get_vocab_list
 
 
 def train(rank, cfg, num_gpus):
@@ -18,16 +21,34 @@ def train(rank, cfg, num_gpus):
     device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
 
     # Define your model
-    vocab_size = cfg.vocab_size
     embedding_size = cfg.embedding_size
     nhead = cfg.nhead
     nhid = cfg.nhid
     nlayers = cfg.nlayers
+    train_file = cfg.train_file
+    val_file = cfg.val_file
+
+    with open(train_file, 'rb') as f:
+            train_dataset = pickle.load(f)
+
+    with open(val_file, 'rb') as f:
+            test_dataset = pickle.load(f)
+
+    vocab_list = get_vocab_list(train_dataset)
+    vocab_list = get_vocab_list(val_file, vocab_list)
+
     model = TransformerModel(vocab_size, embedding_size, nhead, nhid, nlayers).to(device)
 
     # Define your loss function and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
+
+
+
+    train_dataset = TextDataset(train_text,
+                                vocab_list)
+    test_dataset = TextDataset(test_text, 
+                               vocab_list)
 
     # Load your data (this is just a placeholder, replace with your actual data loading)
     train_dataloader = DataLoader(...)
