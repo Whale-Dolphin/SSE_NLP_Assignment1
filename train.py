@@ -34,7 +34,9 @@ def train(rank, cfg, num_gpus):
     with open(val_file, 'rb') as f:
             test_data = pickle.load(f)
 
-    vocab_list = get_vocab_list(train_dataset)
+    vocab_list = ["<MASK>", "<PAD>", "<SOS>", "<EOS>"]
+
+    vocab_list = get_vocab_list(train_dataset, vocab_list)
     vocab_list = get_vocab_list(val_file, vocab_list)
 
     vocab_size = len(vocab_size)
