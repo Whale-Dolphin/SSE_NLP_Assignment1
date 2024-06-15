@@ -1,0 +1,29 @@
+# Configuration file for the Transformer model training
+
+# Model hyperparameters
+embedding_size: 512
+nhead: 8
+nhid: 2048
+nlayers: 6
+
+
+batch_size: 16
+epochs: 50
+learning_rate: 0.0001
+
+# Data paths
+train_file: './data/train_data.pkl'
+val_file: './data/val_data.pkl'
+
+# Checkpoint path
+checkpoint_path: './checkpoints/spell_correct.pth'
+vocab_list_path: './checkpoints/vocab_list.pkl'
+
+# Logging and printing
+log_interval: 100 
+
+# Device configuration
+use_cuda: True 
+
+# Inference file
+inference_file_path: './data/inference/testdata.txt'
