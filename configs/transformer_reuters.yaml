@@ -5,10 +5,10 @@ embedding_size: 512
 nhead: 8
 nhid: 2048
 nlayers: 6
-max_length: 128
+max_length: 1024
 
-batch_size: 1024
-epochs: 200
+batch_size: 16
+epochs: 50
 learning_rate: 0.0001
 
 # Data paths
@@ -26,4 +26,4 @@ log_interval: 100
 use_cuda: True 
 
 # Inference file
-# inference_file_path: './data/inference/testdata.txt'
+inference_file_path: './data/inference/testdata.txt'

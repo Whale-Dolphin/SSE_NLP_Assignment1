@@ -2,9 +2,15 @@ import re
 
 
 def clean_text(text):
+    special_tokens = re.findall(r'<[^>]+>', text)
+    for i, token in enumerate(special_tokens):
+        text = text.replace(token, f"SPECIALTOKEN{i}")
     text = text.lower()
-    text = re.sub(r'\n', ' ', text)
-    text = re.sub(r'[^\w\s]', '', text)
+    text = re.sub(r'[^<>\w\s]', '', text)
+
+    for i, token in enumerate(special_tokens):
+        text = text.replace(f"specialtoken{i}", token)
+    
     return text
 
 

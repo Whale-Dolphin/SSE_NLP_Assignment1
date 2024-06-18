@@ -4,6 +4,7 @@ import pickle
 from typing import Optional
 
 from functools import wraps
+from loguru import logger
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -15,6 +16,9 @@ import hydra
 from dataset import TextDataset 
 from model import MaskedLanguageModel 
 from utils import get_vocab_list, clean_text
+
+log_file_path = ".log/train.log"
+logger.add(log_file_path, format="{time} {level} {message}", level="INFO")
 
 def no_grad(func):
     @wraps(func)
@@ -31,19 +35,19 @@ def cleanup():
 
 def load_checkpoint(model, optimizer, checkpoint_path):
     if os.path.isfile(checkpoint_path):
-        print(f"Loading checkpoint from {checkpoint_path}")
+        logger.info(f"Loading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
-        print(f"Loaded checkpoint at epoch {checkpoint['epoch']}")
+        logger.info(f"Loaded checkpoint at epoch {checkpoint['epoch']}")
         return start_epoch
     else:
-        print(f"No checkpoint found at {checkpoint_path}, starting from scratch.")
+        logger.warning(f"No checkpoint found at {checkpoint_path}, starting from scratch.")
         return 0
 
 def save_checkpoint(model, optimizer, epoch, checkpoint_path):
-    print(f"Saving checkpoint to {checkpoint_path}")
+    logger.info(f"Saving checkpoint to {checkpoint_path}")
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
@@ -88,11 +92,11 @@ def train(rank, cfg, world_size):
     vocab_size = len(vocab_list)
     save_vocab_list(vocab_list, cfg.vocab_list_path)
 
-    # print(type(train_data))
+    logger.debug(type(train_data))
 
     # Create datasets and data loaders
-    train_dataset = TextDataset(train_data, vocab_list)
-    val_dataset = TextDataset(val_data, vocab_list)
+    train_dataset = TextDataset(train_data, vocab_list, cfg.max_length)
+    val_dataset = TextDataset(val_data, vocab_list, cfg.max_length)
     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank) if world_size > 1 else None
     val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank) if world_size > 1 else None
     train_dataloader = DataLoader(train_dataset, batch_size=cfg.batch_size, sampler=train_sampler, shuffle=train_sampler is None)
@@ -122,8 +126,8 @@ def train(rank, cfg, world_size):
         for i, (mask_indices, attention_mask, text_indices) in enumerate(train_dataloader):
             mask_indices, attention_mask, text_indices = mask_indices.to(device), attention_mask.to(device), text_indices.to(device)
 
-            # print(mask_indices.shape)
-            # print(mask_indices[0])
+            logger.debug(mask_indices.shape)
+            logger.debug(mask_indices[0])
 
             with torch.cuda.amp.autocast(): 
                 outputs = model(mask_indices, attention_mask)
@@ -136,12 +140,12 @@ def train(rank, cfg, world_size):
             scaler.update()
 
             if (i + 1) % 100 == 0 and rank == 0:
-                print(f'第 {epoch+1}/{cfg.epochs} 轮, 步骤 {i+1}/{len(train_dataloader)}, 损失: {loss.item()}')
+                logger.info(f'第 {epoch+1}/{cfg.epochs} 轮, 步骤 {i+1}/{len(train_dataloader)}, 损失: {loss.item()}')
 
         # 验证步骤
         if rank == 0:
             val_loss = validate(model, val_dataloader, criterion, device)
-            print(f'第 {epoch+1}/{cfg.epochs} 轮, 验证损失: {val_loss}')
+            logger.info(f'第 {epoch+1}/{cfg.epochs} 轮, 验证损失: {val_loss}')
 
         # 保存检查点
         if rank == 0 and cfg.checkpoint_path:
@@ -165,7 +169,7 @@ def validate(model, val_dataloader, criterion, device):
     average_loss = total_loss / len(val_dataloader)
     return average_loss
 
-@hydra.main(version_base="1.3", config_path="./configs", config_name="transformer.yaml")
+@hydra.main(version_base="1.3", config_path="./configs", config_name="transformer_reuters.yaml")
 def main(cfg: DictConfig) -> Optional[float]:
     print('初始化训练进程..')
 
